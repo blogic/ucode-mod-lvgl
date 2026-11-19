@@ -56,7 +56,8 @@ function ring_new(parent) {
  * gauge_new - an arc with its reading inside it and a caption beside it
  * @parent: the cell it fills
  * @opts: caption; side, left or right, for the edge the ring goes to; unit, the
- *	  one character the reading ends in; low and high, the range mapped onto
+ *	  one character the reading ends in; direction, gap and edge for layout;
+ *	  low and high are the range mapped onto
  *	  the travel, 0 and 100 by default
  *
  * Sweep and colour are separate inputs: a range mapped onto the travel still
@@ -71,20 +72,28 @@ export function gauge_new(parent, opts) {
 	let low = opts.low ?? SWEEP_LOW;
 	let high = opts.high ?? SWEEP_HIGH;
 	let unit = opts.unit ?? '';
-	let root = flow_new(parent, { dir: 'row', gap: GAP, cross: 'centre',
-				      main: right ? 'end' : 'start' });
+	let direction = opts.direction ?? 'row';
+	let vertical = direction == 'column';
+	let edge = opts.edge ?? EDGE;
+	let root = flow_new(parent, {
+		dir: direction,
+		gap: opts.gap ?? GAP,
+		cross: 'centre',
+		main: vertical ? 'centre' : right ? 'end' : 'start'
+	});
 	let arc;
 
-	root.style(right ? { pad_right: EDGE } : { pad_left: EDGE });
+	if (edge)
+		root.style(right ? { pad_right: edge } : { pad_left: edge });
 
-	if (!right)
+	if (!right || vertical)
 		arc = ring_new(root);
 
 	let caption = label_new(root, FONT_REG_15, C_TXT, opts.caption);
 
 	caption.style({ pad_all: 0, border_width: 0 });
 
-	if (right)
+	if (right && !vertical)
 		arc = ring_new(root);
 
 	let reading = text_new(arc, FONT_SEMI_15, C_TXT, '');

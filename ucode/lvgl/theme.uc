@@ -52,8 +52,9 @@ export const C_OK	= 0x32d74b;
 export const C_WARN	= 0xff9f0a;
 export const C_ALERT	= 0xff453a;
 
-export const W		= 320;
-export const H		= 240;
+export const theme_options = require('lvgl.theme_options');
+export const W		= theme_options.width ?? 320;
+export const H		= theme_options.height ?? 240;
 
 /* Cards are full bleed: they meet the top and both sides of the glass, and only
    the bottom is held back, to clear the page dots. */
@@ -101,8 +102,9 @@ export const ROW_GAP	= 9;
  */
 export const HEAD_TOP	= 11;
 export const HEAD_X	= 12;
+export const HEAD_FONT	= theme_options.header_font ?? FONT_SEMI_21;
 export const HEAD_BOTTOM = 7;
-export const HEAD_INDENT = 40;
+export const HEAD_INDENT = theme_options.header_indent ?? 40;
 
 /*
  * The lock sits opposite the header on every page that can be left, and is the
@@ -121,7 +123,7 @@ export const BACK_Y	= 6;
 
 /* Page dots, roots only. */
 export const DOT_SIZE	= 5;
-export const DOT_GAP	= 10;
+export const DOT_GAP	= theme_options.dot_gap ?? 10;
 export const DOT_BOTTOM	= 5;
 
 /*
@@ -138,7 +140,7 @@ export const LIST_H_SUB	= LIST_H;
  * rather than copied out of it, so it cannot drift when the fonts are cut
  * again. Regenerating the set once already moved every line height by a pixel.
  */
-export const HEAD_H	= HEAD_TOP + lv.font_line_height(FONT_SEMI_21) + HEAD_BOTTOM;
+export const HEAD_H	= HEAD_TOP + lv.font_line_height(HEAD_FONT) + HEAD_BOTTOM;
 
 /*
  * The strip a page draws into, under the fixed header. Nine pages held back

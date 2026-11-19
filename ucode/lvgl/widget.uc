@@ -1,14 +1,14 @@
 'use strict';
 
 import * as lv from 'lv';
-import { FONT_TNUM_12, FONT_TNUM_10, FONT_REG_15, FONT_REG_11, FONT_SEMI_21,
+import { FONT_TNUM_12, FONT_TNUM_10, FONT_REG_15, FONT_REG_11,
 	 FONT_SEMI_15, FONT_REG_13, IMAGE_CHEVRON, IMAGE_EYE,
 	 IMAGE_EYE_OFF } from 'lvgl.assets';
 import { C_SCREEN, C_SURFACE, C_RULE, C_TXT, C_ACTION, CARD_X, CARD_W,
 	 CARD_PAD, CARD_RADIUS, SEP_H, C_TXT_DIM, C_RAISED, C_IDLE, C_DOWN,
-	 C_OK, C_ALERT, H, GROUP_X, GROUP_W, GROUP_RADIUS, ROW_H, ROW_PAD,
-	 ROW_GAP, HEAD_TOP, HEAD_X, HEAD_BOTTOM, HEAD_INDENT,
-	 HEAD_H as HEAD_H_THEME, LIST_H } from 'lvgl.theme';
+	 C_OK, C_ALERT, W, H, GROUP_X, GROUP_W, GROUP_RADIUS, ROW_H, ROW_PAD,
+	 ROW_GAP, HEAD_TOP, HEAD_X, HEAD_INDENT, HEAD_FONT,
+	 HEAD_H as HEAD_H_THEME, LIST_H, theme_options } from 'lvgl.theme';
 
 /* It belongs to the grid in theme.uc now. Still exported from here, because
    four pages already take it from here. */
@@ -305,18 +305,27 @@ export function icon_new(parent, image, colour) {
  */
 export function header_new(parent, title, indented, count) {
 	let x = indented ? HEAD_INDENT : HEAD_X;
-	let label = label_new(parent, FONT_SEMI_21, C_TXT, title);
+	let label = label_new(parent, HEAD_FONT, C_TXT, title);
+	let inset = indented ? theme_options.subpage_title_inset : theme_options.title_inset;
+	let available = null;
 
 	label.set({ x, y: HEAD_TOP });
+	if (inset != null) {
+		let tally_width = count == null ? 0 : theme_options.tally_width ?? 0;
+		available = max(1, W - x - inset - tally_width);
+		label.set({ w: available });
+		label.long_mode(lv.LABEL_LONG_DOTS);
+	}
 
 	if (count == null)
 		return label;
 
-	let after = x + lv.text_width(FONT_SEMI_21, title) + 5;
+	let title_width = lv.text_width(HEAD_FONT, title);
+	let after = x + min(title_width, available ?? title_width) + 5;
 	let tally = label_new(parent, FONT_REG_13, C_RULE, count);
 
 	tally.set({ x: after,
-		    y: HEAD_TOP + lv.font_line_height(FONT_SEMI_21) - LINE_UNIT - 2 });
+		    y: HEAD_TOP + lv.font_line_height(HEAD_FONT) - LINE_UNIT - 2 });
 
 	return label;
 };
@@ -726,7 +735,7 @@ export function row_stacked_height(value, h) {
 const SCRIM_OPA		= 196;	/* 77 per cent */
 const DIALOG_OPA	= 247;
 
-const DIALOG_X		= 34;
+const DIALOG_X		= theme_options.dialog_inset ?? 34;
 const DIALOG_W		= CARD_W - 2 * DIALOG_X;
 const DIALOG_RADIUS	= 13;
 const DIALOG_PAD	= 15;
