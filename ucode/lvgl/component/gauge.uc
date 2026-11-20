@@ -18,6 +18,8 @@ const SWEEP_HIGH = 100;
 const SIZE	= 72;
 const GAP	= 10;
 const EDGE	= 20;
+/* The ring's opening sits at the bottom, so the caption can close in on it. */
+const BELOW_GAP	= 2;
 
 function sweep_of(value, low, high) {
 	let sweep = int((value - low) * 100 / (high - low));
@@ -55,9 +57,11 @@ function ring_new(parent) {
 /**
  * gauge_new - an arc with its reading inside it and a caption beside it
  * @parent: the cell it fills
- * @opts: caption; side, left or right, for the edge the ring goes to; unit, the
- *	  one character the reading ends in; low and high, the range mapped onto
- *	  the travel, 0 and 100 by default
+ * @opts: caption; side, left or right, for the edge the ring goes to; below,
+ *	  true to centre the ring and put the caption under it instead, for a
+ *	  cell too narrow for both side by side; unit, the one character the
+ *	  reading ends in; low and high, the range mapped onto the travel, 0 and
+ *	  100 by default
  *
  * Sweep and colour are separate inputs: a range mapped onto the travel still
  * takes its colour from the raw reading. The arc is coloured and the number is
@@ -67,15 +71,20 @@ function ring_new(parent) {
  * because zero clamps to an empty green ring and claims the chip is cold.
  */
 export function gauge_new(parent, opts) {
-	let right = opts.side == 'right';
+	let below = !!opts.below;
+	let right = !below && opts.side == 'right';
 	let low = opts.low ?? SWEEP_LOW;
 	let high = opts.high ?? SWEEP_HIGH;
 	let unit = opts.unit ?? '';
-	let root = flow_new(parent, { dir: 'row', gap: GAP, cross: 'centre',
-				      main: right ? 'end' : 'start' });
+	let root = below
+		? flow_new(parent, { dir: 'column', gap: BELOW_GAP,
+				     cross: 'centre', main: 'centre' })
+		: flow_new(parent, { dir: 'row', gap: GAP, cross: 'centre',
+				     main: right ? 'end' : 'start' });
 	let arc;
 
-	root.style(right ? { pad_right: EDGE } : { pad_left: EDGE });
+	if (!below)
+		root.style(right ? { pad_right: EDGE } : { pad_left: EDGE });
 
 	if (!right)
 		arc = ring_new(root);
@@ -91,7 +100,8 @@ export function gauge_new(parent, opts) {
 
 	reading.obj.set({ align: lv.ALIGN_CENTER });
 
-	let gauge = { obj: root };
+	/* ring and caption for a caller that checks the layout */
+	let gauge = { obj: root, ring: arc, caption };
 	let sweep_shown = -1;
 	let colour_shown;
 

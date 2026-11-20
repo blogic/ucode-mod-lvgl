@@ -52,8 +52,24 @@ export const C_OK	= 0x32d74b;
 export const C_WARN	= 0xff9f0a;
 export const C_ALERT	= 0xff453a;
 
-export const W		= 320;
-export const H		= 240;
+/*
+ * The panel is 320x240. LVGL_ROTATION turns it, and is read here, once, at
+ * import: every size below and every page's own layout constants follow from
+ * W and H before any display exists. The application hands the same value to
+ * lv.display_rotation(). 90 and 270 make it 240x320.
+ */
+function rotation_read() {
+	let asked = getenv('LVGL_ROTATION');
+
+	return (asked == '90' || asked == '180' || asked == '270') ? +asked : 0;
+}
+
+export const ROTATION	= rotation_read();
+
+const PORTRAIT		= (ROTATION == 90 || ROTATION == 270);
+
+export const W		= PORTRAIT ? 240 : 320;
+export const H		= PORTRAIT ? 320 : 240;
 
 /* Cards are full bleed: they meet the top and both sides of the glass, and only
    the bottom is held back, to clear the page dots. */
