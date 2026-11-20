@@ -6,7 +6,7 @@ import { C_SCREEN, C_IDLE, C_TXT_DIM, C_RAISED, C_TXT, W, H, DOT_SIZE, DOT_GAP,
 	 LOCK_HIT } from 'lvgl.theme';
 import { box_new } from 'lvgl.widget';
 import { subpage_load } from 'lvgl.loader';
-import { IMAGE_BACK, IMAGE_LOCK } from 'lvgl.assets';
+import { IMAGE_BACK, IMAGE_LOCK, IMAGE_KEY, IMAGE_LOGOUT } from 'lvgl.assets';
 import { state, source_subscribe, source_release, source_seed,
 	 source_watch } from 'lvgl.sampler';
 
@@ -19,6 +19,8 @@ const DEPTH_MAX	= 2;
 const TILE_SPACER = 0;
 const TILE_PAGE	= 1;
 
+/* Every root that loaded; pages is the part of it the current mode shows. */
+let all_pages = [];
 let pages = [];
 let tiles = [];
 let dots = [];
@@ -31,6 +33,43 @@ let active = 0;
 let locked, pinning;
 let activity_fn, wake_fn, defer_fn, idle_fn, brightness_fns;
 let pending = [];
+
+/*
+ * Two modes once a PIN is set. Public shows the roots marked public, and the
+ * items named in the panel's public list, to anyone at the device. Private
+ * shows everything; it starts with the PIN and ends with logout, the lock
+ * button or the idle timeout. Without a PIN there is only one mode, and it
+ * shows everything, as before.
+ */
+let private_on = false;
+let public_items = [];
+
+/* The exported view calls, for the buttons built before they are defined. */
+const views = {};
+
+function modes_on() {
+	return pin_page != null;
+}
+
+function page_public(page) {
+	return (page.config?.visibility ?? page.visibility) == 'public';
+}
+
+function pages_visible() {
+	if (!modes_on() || private_on)
+		return all_pages;
+
+	return filter(all_pages, page_public);
+}
+
+/* Whether a page may show one item, such as a network: kind and id are joined
+   to the "kind:id" form the public list uses. */
+function item_visible(kind, id) {
+	if (!modes_on() || private_on)
+		return true;
+
+	return index(public_items, sprintf('%s:%s', kind, id)) >= 0;
+}
 
 function activity_dispatch() {
 	if (activity_fn)
@@ -92,14 +131,21 @@ function source_update(name, broadcast) {
 		page_update(stack[-1].page, name);
 }
 
+/* Both take null: public mode can have no root at all, before the PIN. */
 function page_leave(page) {
-	if (page?.leave)
+	if (!page)
+		return;
+
+	if (page.leave)
 		page.leave();
 
 	source_release(page.needs);
 }
 
 function page_enter(page) {
+	if (!page)
+		return;
+
 	source_subscribe(page.needs);
 
 	if (page?.enter)
@@ -278,7 +324,42 @@ function lock_build(parent) {
 	return hit;
 }
 
-function back_build(parent) {
+/* Left of the lock: a key that asks for the PIN in public mode, a logout that
+   drops back to public in private mode. Absent while there is only one mode. */
+function key_build(parent) {
+	if (!modes_on())
+		return null;
+
+	let hit = lv.obj(parent);
+
+	hit.set({ x: W - 2 * LOCK_HIT, y: 0, w: LOCK_HIT, h: LOCK_HIT });
+	hit.style({ bg_opa: lv.OPA_TRANSP, border_width: 0, pad_all: 0,
+		    radius: 0 });
+	hit.clickable(true);
+	hit.scrollable(false);
+
+	let mark = lv.image(hit);
+
+	mark.src(private_on ? IMAGE_LOGOUT : IMAGE_KEY);
+	mark.style({ image_recolor: C_TXT, image_recolor_opa: lv.OPA_COVER });
+	mark.set({ x: LOCK_X - (W - LOCK_HIT), y: LOCK_Y });
+	mark.clickable(false);
+
+	hit.on(lv.EVENT_CLICKED, function() {
+		activity_dispatch();
+		defer(private_on ? views.logout : views.pin);
+	});
+
+	return hit;
+}
+
+/* What every page is handed on top of the shared context. */
+function page_ctx(config) {
+	return { ...ctx, config, private: private_on, visible: item_visible };
+}
+
+/* @on_back: what a press does, nav_back unless given */
+function back_build(parent, on_back) {
 	let obj = lv.obj(parent);
 
 	obj.set({ x: BACK_X, y: BACK_Y, w: BACK_SIZE, h: BACK_SIZE });
@@ -297,7 +378,7 @@ function back_build(parent) {
 
 	obj.on(lv.EVENT_CLICKED, function() {
 		activity_dispatch();
-		nav_back();
+		(on_back ?? nav_back)();
 	});
 
 	return obj;
@@ -323,8 +404,9 @@ function nav_open(name, params) {
 
 	background_build(layer.content);
 
-	page.build(layer.content, { ...ctx, config: null, params });
+	page.build(layer.content, { ...page_ctx(null), params });
 	back_build(layer.content);
+	key_build(layer.content);
 	lock_build(layer.content);
 
 	page_leave(view_current());
@@ -383,11 +465,67 @@ function tiles_build() {
 	}
 
 	for (let i = 0; i < count; i++) {
-		pages[i].build(tiles[i], { ...ctx, config: pages[i].config });
+		pages[i].build(tiles[i], page_ctx(pages[i].config));
 
-		if (!pages[i].test)
+		if (!pages[i].test) {
+			key_build(tiles[i]);
 			lock_build(tiles[i]);
+		}
 	}
+}
+
+/*
+ * main_build - (re)build the root pager for the current mode
+ *
+ * A mode change rebuilds rather than hides: a hidden tile would still be a
+ * swipe target, and a page built public must not keep private data around.
+ * The caller leaves the current page first and enters the new one after.
+ */
+function main_build(seeded) {
+	screen.clean();
+
+	pages = pages_visible();
+	tiles = [];
+	dots = [];
+	stack = [];
+	layers = [];
+	active = 0;
+
+	background_build(screen);
+
+	tileview = lv.tileview(screen);
+
+	tileview.set({ x: 0, y: 0, w: W, h: H });
+	tileview.style({ bg_opa: lv.OPA_TRANSP, border_width: 0, pad_all: 0 });
+	tileview.scrollbar(lv.SCROLLBAR_OFF);
+	tileview.on(lv.EVENT_VALUE_CHANGED, tile_changed);
+
+	if (!scroll_pages)
+		tileview.scrollable(false);
+
+	tiles_build();
+
+	dots_build(length(pages));
+
+	for (let depth = 1; depth <= DEPTH_MAX; depth++)
+		push(layers, layer_new(depth));
+
+	/* On a mode change, draw from what is already sampled instead of an empty
+	   page until the next sample; the first build leaves that to ui_seed. */
+	if (seeded)
+		for (let page in pages)
+			page.enter?.();
+}
+
+/* Show the first root of the current mode. */
+function roots_show() {
+	tileview.tile_set(0, 0, false);
+
+	page_enter(pages[active]);
+	dots_refresh();
+	chrome_refresh();
+
+	lv.screen_load(screen);
 }
 
 function stack_unwind() {
@@ -404,16 +542,21 @@ function pin_unlock() {
 	page_leave(pin_page);
 	pinning = false;
 
-	stack_unwind();
+	private_on = true;
+	main_build(true);
+	roots_show();
+}
 
-	active = 0;
-	tileview.tile_set(0, 0, false);
+/* Back from the keypad without the PIN, built only when there is a public
+   root to go back to; otherwise the keypad stays the only way in, as before. */
+function pin_back_build(parent) {
+	if (!length(filter(all_pages, page_public)))
+		return null;
 
-	page_enter(pages[active]);
-	dots_refresh();
-	chrome_refresh();
-
-	lv.screen_load(screen);
+	/* The keypad has no stack to pop, so not nav_back. */
+	return back_build(parent, function() {
+		defer(views.pin_cancel);
+	});
 }
 
 /**
@@ -479,15 +622,21 @@ export function nav_flush() {
  * @bg: a background image handle, or null
  * @scroll: true to swipe between roots, false to change page in one step
  * @clock_24h: the format the idle clock is drawn in
- * @extra: fields of the application's own that every page finds in ctx
+ * @extra: fields of the application's own that every page finds in ctx; its
+ *	   public list names the "kind:id" items a public page may show
+ *
+ * With a PIN the roots split into public and private ones, by their config
+ * section's visibility option, else the page's own, else private.
  */
 export function ui_build(page_list, lock, pin, pin_code, bg, scroll, clock_24h,
 			 extra) {
-	pages = page_list;
+	all_pages = page_list;
 	lock_page = lock;
 	pin_page = pin_code ? pin : null;
 	background = bg;
 	scroll_pages = scroll;
+	public_items = extra?.public ?? [];
+	private_on = false;
 
 	ctx = { ...extra, state, activity: activity_dispatch,
 		open: nav_open, back: nav_back, defer,
@@ -505,26 +654,12 @@ export function ui_build(page_list, lock, pin, pin_code, bg, scroll, clock_24h,
 
 	screen = screen_new();
 
-	background_build(screen);
-
-	tileview = lv.tileview(screen);
-
-	tileview.set({ x: 0, y: 0, w: W, h: H });
-	tileview.style({ bg_opa: lv.OPA_TRANSP, border_width: 0, pad_all: 0 });
-	tileview.scrollbar(lv.SCROLLBAR_OFF);
-	tileview.on(lv.EVENT_VALUE_CHANGED, tile_changed);
-
-	if (!scroll_pages) {
-		tileview.scrollable(false);
+	/* On the screen, not the tileview: it survives the rebuild of a mode
+	   change. */
+	if (!scroll_pages)
 		screen.on(lv.EVENT_GESTURE, root_swipe);
-	}
 
-	tiles_build();
-
-	dots_build(length(pages));
-
-	for (let depth = 1; depth <= DEPTH_MAX; depth++)
-		push(layers, layer_new(depth));
+	main_build();
 
 	lock_screen = screen_new();
 	lock_screen.on(lv.EVENT_PRESSED, wake_dispatch);
@@ -540,6 +675,7 @@ export function ui_build(page_list, lock, pin, pin_code, bg, scroll, clock_24h,
 					     unlock: function() {
 						defer(pin_unlock);
 					     } });
+		pin_back_build(pin_screen);
 	}
 
 	source_watch(source_update);
@@ -589,7 +725,8 @@ export function view_status() {
 		index: active,
 		page: length(stack) ? stack[-1].page.name : pages[active]?.name,
 		root: pages[active]?.name,
-		pages: names
+		pages: names,
+		private: private_on
 	};
 };
 
@@ -656,11 +793,19 @@ export function view_back() {
 
 /**
  * view_lock - show the idle screen
+ *
+ * Ends private mode: whoever wakes the panel next starts public.
  */
 export function view_lock() {
 	page_leave(view_current());
 	locked = true;
 	pinning = false;
+
+	if (private_on) {
+		private_on = false;
+		main_build(true);
+	}
+
 	page_enter(lock_page);
 
 	lv.screen_load(lock_screen);
@@ -699,11 +844,63 @@ export function view_wake() {
 	stack_unwind();
 
 	active = 0;
-	tileview.tile_set(0, 0, false);
-
-	page_enter(pages[active]);
-	dots_refresh();
-	chrome_refresh();
-
-	lv.screen_load(screen);
+	roots_show();
 };
+
+/**
+ * view_public - whether waking goes to the roots rather than the keypad
+ *
+ * Return: true without a PIN, or with a PIN when some root is public.
+ */
+export function view_public() {
+	return !modes_on() || length(filter(all_pages, page_public)) > 0;
+};
+
+/**
+ * view_logout - leave private mode for the first public root
+ *
+ * Always the first one, wherever the panel was, so it ends up in the same
+ * place every time. With no public root it goes to idle instead.
+ */
+export function view_logout() {
+	if (!private_on)
+		return;
+
+	if (!length(filter(all_pages, page_public))) {
+		idle_dispatch();
+
+		return;
+	}
+
+	page_leave(view_current());
+	locked = false;
+	pinning = false;
+	private_on = false;
+
+	main_build(true);
+	roots_show();
+};
+
+/**
+ * view_pin_cancel - leave the keypad without the PIN, for the first public root
+ */
+export function view_pin_cancel() {
+	if (!pinning)
+		return;
+
+	if (!length(pages)) {
+		idle_dispatch();
+
+		return;
+	}
+
+	page_leave(pin_page);
+	pinning = false;
+
+	active = 0;
+	roots_show();
+};
+
+views.pin = view_pin;
+views.logout = view_logout;
+views.pin_cancel = view_pin_cancel;

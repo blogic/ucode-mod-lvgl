@@ -5,7 +5,8 @@ import * as uci from 'uci';
 import * as uloop from 'uloop';
 import { writefile, glob, readfile } from 'fs';
 import { monotonic, sampler_awake } from 'lvgl.sampler';
-import { view_lock, view_wake, view_pin, activity_watch, wake_watch,
+import { view_lock, view_wake, view_pin, view_public, activity_watch,
+	 wake_watch,
 	 defer_watch, idle_watch, brightness_watch,
 	 nav_flush } from 'lvgl.page';
 
@@ -50,7 +51,9 @@ export const settings = {
 	test_pages: false,
 	card_opa: lv.OPA_COVER,
 	pages: PAGES_DEFAULT,
-	sections: {}
+	sections: {},
+	/* "kind:id" items a public page may show, such as "ssid:guest" */
+	public: []
 };
 
 let app_config;
@@ -182,6 +185,11 @@ function settings_read() {
 	if (type(listed) == 'array' && length(listed))
 		settings.pages = listed;
 
+	let items = cursor.get(app_config, '@panel[0]', 'public');
+
+	if (type(items) == 'array')
+		settings.public = items;
+
 	let sections = {};
 
 	cursor.foreach(app_config, 'page', function(section) {
@@ -216,7 +224,9 @@ function wake_run() {
 
 	sampler_awake(true);
 
-	if (!settings.pin || !view_pin())
+	/* The keypad comes first only when nothing is public: then the panel
+	   behaves as it did before the two modes. */
+	if (view_public() || !view_pin())
 		view_wake();
 
 	lv.refresh();

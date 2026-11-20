@@ -105,19 +105,15 @@ export function loader_init(opts) {
 /**
  * page_load - load a root page by name
  * @name: the name from the uci pages list
- * @section: its config page section, for a template instance, else null
+ * @section: its config page section, else null. With a template option it
+ *	      makes a template instance; without one it only carries settings
+ *	      for the page of that name, such as its visibility.
  *
  * Return: the page object, or null when it will not load, its ubus object is
  * absent, or an option it names is not set.
  */
 export function page_load(name, section) {
-	if (section && !section.template) {
-		warn(sprintf('panel: page %s names no template\n', name));
-
-		return null;
-	}
-
-	let path = section
+	let path = section?.template
 		? sprintf('%s/templates/%s.uc', app_dir, section.template)
 		: sprintf('%s/pages/%s.uc', app_dir, name);
 	let page = page_read(path, name);
