@@ -10,6 +10,16 @@ import { view_lock, view_wake, view_pin, view_public, activity_watch,
 	 defer_watch, idle_watch, brightness_watch,
 	 nav_flush } from 'lvgl.page';
 
+/**
+ * pin_valid - whether a configured PIN can be typed on the keypad
+ * @pin: the option's value
+ *
+ * Return: true for 4 to 8 digits.
+ */
+export function pin_valid(pin) {
+	return type(pin) == 'string' && !!match(pin, /^[0-9]{4,8}$/);
+};
+
 const ST_AWAKE	= 0;
 const ST_LOCKED	= 1;
 
@@ -148,10 +158,12 @@ function settings_read() {
 
 	let pin = cursor.get(app_config, '@panel[0]', 'pin');
 
-	if (type(pin) == 'string' && match(pin, /^[0-9]{6}$/))
-		settings.pin = pin;
-	else if (pin)
-		warn('panel: pin must be six digits, ignoring it\n');
+	/* An unusable PIN stays set, so the private pages stay shut behind a
+	   keypad nobody can satisfy. Dropping it would open them all. */
+	settings.pin = (pin != null && pin != '') ? pin : null;
+
+	if (settings.pin && !pin_valid(pin))
+		warn('panel: pin must be 4 to 8 digits, keeping the private pages shut\n');
 
 	let bright = cursor.get(app_config, '@panel[0]', 'brightness');
 
