@@ -5,7 +5,7 @@ import { C_SCREEN, C_IDLE, C_TXT_DIM, C_RAISED, C_TXT, W, H, DOT_SIZE, DOT_GAP,
 	 DOT_BOTTOM, BACK_SIZE, BACK_X, BACK_Y, LOCK_SIZE, LOCK_X, LOCK_Y,
 	 LOCK_HIT } from 'lvgl.theme';
 import { box_new } from 'lvgl.widget';
-import { subpage_load } from 'lvgl.loader';
+import { subpage_load, page_fresh } from 'lvgl.loader';
 import { IMAGE_BACK, IMAGE_LOCK, IMAGE_KEY, IMAGE_LOGOUT } from 'lvgl.assets';
 import { state, source_subscribe, source_release, source_seed,
 	 source_watch } from 'lvgl.sampler';
@@ -483,6 +483,11 @@ function tiles_build() {
  */
 function main_build(seeded) {
 	screen.clean();
+
+	/* Fresh instances on a rebuild: the old ones still hold the widgets
+	   clean() just deleted. */
+	if (seeded)
+		all_pages = map(all_pages, page_fresh);
 
 	pages = pages_visible();
 	tiles = [];

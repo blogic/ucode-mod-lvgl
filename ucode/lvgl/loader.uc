@@ -86,9 +86,36 @@ function page_read(path, name) {
 
 	page.needs ??= [];
 	page.name = name;
+	page.path = path;
 
 	return page;
 }
+
+/**
+ * page_fresh - a new instance of a page, with module state of its own
+ * @page: a page this loader returned
+ *
+ * A page keeps its widgets in module state, so building the same instance
+ * twice leaves it holding widgets the first build's screen has deleted. Each
+ * call runs the file again and returns an instance that has built nothing yet.
+ *
+ * Return: the new instance, or @page itself when it did not come from a file
+ * or no longer loads.
+ */
+export function page_fresh(page) {
+	if (!page?.path)
+		return page;
+
+	let fresh = page_read(page.path, page.name);
+
+	if (!fresh)
+		return page;
+
+	fresh.config = page.config;
+	fresh.test = page.test;
+
+	return fresh;
+};
 
 /**
  * loader_init - say where the application keeps its pages
