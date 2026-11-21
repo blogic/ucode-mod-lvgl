@@ -862,6 +862,54 @@ uc_lv_timer_handler(uc_vm_t *vm, size_t nargs)
 }
 
 /**
+ * uc_lv_display_rotation() - lv.display_rotation([degrees])
+ * @degrees: 0, 90, 180 or 270 to turn the picture; left out to only read it
+ *
+ * 90 and 270 swap the logical resolution, so lay out for that before setting
+ * it. Touch follows on its own: LVGL turns the pointer with the display.
+ *
+ * Return: the rotation now in effect, in degrees.
+ */
+static uc_value_t *
+uc_lv_display_rotation(uc_vm_t *vm, size_t nargs)
+{
+	uc_value_t *deg = uc_fn_arg(0);
+	lv_display_rotation_t rot;
+
+	if (!display) {
+		uc_vm_raise_exception(vm, EXCEPTION_RUNTIME,
+				      "lv.display_drm() has not been called");
+		return NULL;
+	}
+
+	if (deg) {
+		switch (ucv_to_integer(deg)) {
+		case 0:   rot = LV_DISPLAY_ROTATION_0;   break;
+		case 90:  rot = LV_DISPLAY_ROTATION_90;  break;
+		case 180: rot = LV_DISPLAY_ROTATION_180; break;
+		case 270: rot = LV_DISPLAY_ROTATION_270; break;
+		default:
+			uc_vm_raise_exception(vm, EXCEPTION_TYPE,
+					      "rotation must be 0, 90, 180 or 270");
+			return NULL;
+		}
+
+		if (lv_linux_drm_set_rotation(display, rot)) {
+			uc_vm_raise_exception(vm, EXCEPTION_RUNTIME,
+					      "cannot rotate the display");
+			return NULL;
+		}
+	}
+
+	switch (lv_display_get_rotation(display)) {
+	case LV_DISPLAY_ROTATION_90:  return ucv_int64_new(90);
+	case LV_DISPLAY_ROTATION_180: return ucv_int64_new(180);
+	case LV_DISPLAY_ROTATION_270: return ucv_int64_new(270);
+	default:		      return ucv_int64_new(0);
+	}
+}
+
+/**
  * uc_lv_drm_drop_master() - lv.drm_drop_master()
  *
  * Hands DRM master to the next process to open the device, without closing it.
@@ -1138,6 +1186,7 @@ static const uc_function_list_t global_fns[] = {
 	{ "timer_handler",	uc_lv_timer_handler },
 	{ "refresh",		uc_lv_refresh },
 	{ "drm_drop_master",	uc_lv_drm_drop_master },
+	{ "display_rotation",	uc_lv_display_rotation },
 	{ "text_width",		uc_lv_text_width },
 	{ "font_line_height",	uc_lv_font_line_height },
 	{ "pct",		uc_lv_pct },
