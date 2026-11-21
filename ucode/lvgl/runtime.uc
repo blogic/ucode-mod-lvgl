@@ -5,9 +5,20 @@ import * as uci from 'uci';
 import * as uloop from 'uloop';
 import { writefile, glob, readfile } from 'fs';
 import { monotonic, sampler_awake } from 'lvgl.sampler';
-import { view_lock, view_wake, view_pin, activity_watch, wake_watch,
+import { view_lock, view_wake, view_pin, view_public, activity_watch,
+	 wake_watch,
 	 defer_watch, idle_watch, brightness_watch,
 	 nav_flush } from 'lvgl.page';
+
+/**
+ * pin_valid - whether a configured PIN can be typed on the keypad
+ * @pin: the option's value
+ *
+ * Return: true for 4 to 8 digits.
+ */
+export function pin_valid(pin) {
+	return type(pin) == 'string' && !!match(pin, /^[0-9]{4,8}$/);
+};
 
 const ST_AWAKE	= 0;
 const ST_LOCKED	= 1;
@@ -50,7 +61,9 @@ export const settings = {
 	test_pages: false,
 	card_opa: lv.OPA_COVER,
 	pages: PAGES_DEFAULT,
-	sections: {}
+	sections: {},
+	/* "kind:id" items a public page may show, such as "ssid:guest" */
+	public: []
 };
 
 let app_config;
@@ -145,10 +158,12 @@ function settings_read() {
 
 	let pin = cursor.get(app_config, '@panel[0]', 'pin');
 
-	if (type(pin) == 'string' && match(pin, /^[0-9]{6}$/))
-		settings.pin = pin;
-	else if (pin)
-		warn('panel: pin must be six digits, ignoring it\n');
+	/* An unusable PIN stays set, so the private pages stay shut behind a
+	   keypad nobody can satisfy. Dropping it would open them all. */
+	settings.pin = (pin != null && pin != '') ? pin : null;
+
+	if (settings.pin && !pin_valid(pin))
+		warn('panel: pin must be 4 to 8 digits, keeping the private pages shut\n');
 
 	let bright = cursor.get(app_config, '@panel[0]', 'brightness');
 
@@ -181,6 +196,11 @@ function settings_read() {
 
 	if (type(listed) == 'array' && length(listed))
 		settings.pages = listed;
+
+	let items = cursor.get(app_config, '@panel[0]', 'public');
+
+	if (type(items) == 'array')
+		settings.public = items;
 
 	let sections = {};
 
@@ -216,7 +236,9 @@ function wake_run() {
 
 	sampler_awake(true);
 
-	if (!settings.pin || !view_pin())
+	/* The keypad comes first only when nothing is public: then the panel
+	   behaves as it did before the two modes. */
+	if (view_public() || !view_pin())
 		view_wake();
 
 	lv.refresh();

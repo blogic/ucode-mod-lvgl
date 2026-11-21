@@ -54,5 +54,7 @@ export const IMAGE_EYE		= mark('icon_eye');
 export const IMAGE_EYE_OFF	= mark('icon_eye_off');
 export const IMAGE_BACKSPACE	= mark('icon_backspace');
 export const IMAGE_LOCK		= mark('icon_lock');
+export const IMAGE_KEY		= mark('icon_key');
+export const IMAGE_LOGOUT	= mark('icon_logout');
 export const IMAGE_SUN		= mark('icon_sun');
 export const IMAGE_INFO		= mark('icon_info');
